@@ -3,75 +3,80 @@
 import streamlit as st
 import numpy as np
 import functions as f
-import matplotlib.pyplot as plt
 from io import BytesIO
 
-# Configuración de la página
-st.set_page_config(page_title="Análisis Sísmico", layout="wide")
-st.title("📊 Análisis Sísmico de Edificios")
+st.set_page_config(page_title="Análisis Sísmico Dinámico", layout="wide")
+st.title("🏗️ Análisis Sísmico con Parámetros Dinámicos")
 
-# Sidebar para parámetros de entrada
+# Sidebar para parámetros editables
 with st.sidebar:
-    st.header("⚙️ Parámetros de Entrada")
-    g = 9.81
-    H = st.number_input("Altura total (m)", value=3.0, step=0.1)
-    Z = st.number_input("Factor de zona", value=0.45, step=0.05)
-    S = st.number_input("Factor de suelo", value=1.0, step=0.1)
-    TP = st.number_input("Período TP (s)", value=0.4, step=0.05)
-    TL = st.number_input("Período TL (s)", value=2.5, step=0.1)
-    U = st.number_input("Factor de uso", value=1.0, step=0.1)
-    CT = st.number_input("Coeficiente CT", value=35.0, step=1.0)
-    R0 = st.number_input("Factor R0", value=8, step=1)
-    m1 = st.number_input("Masa pisos 1-4 (ton)", value=31.80, step=0.1)
-    m5 = st.number_input("Masa piso 5 (ton)", value=27.50, step=0.1)
+    st.header("🔧 Parámetros de Configuración")
+    
+    # Parámetros principales
+    n_pisos = st.number_input("Número de Pisos", 1, 10, 5)
+    n_modos = st.number_input("Número de Modos", 1, 5, 3)
+    
+    # Factores de cálculo
+    st.subheader("Factores de Cálculo")
+    Ia = st.number_input("Factor Ia", 0.5, 2.0, 1.0)
+    Ip = st.number_input("Factor Ip", 0.5, 2.0, 1.0)
+    CT = st.number_input("Coeficiente CT", 10.0, 100.0, 35.0)
+    R0 = st.number_input("Factor R0", 1, 10, 8)
+    
+    # Masas por piso
+    st.subheader("Configuración de Masas")
+    masa_base = st.number_input("Masa Base (ton)", 20.0, 50.0, 31.8)
+    masa_ultimo = st.number_input("Masa Último Piso (ton)", 20.0, 50.0, 27.5)
+    masas = [masa_base]*(n_pisos-1) + [masa_ultimo]
+    
+    # Vectores modales
+    st.subheader("Vectores Modales")
+    modos = {}
+    for i in range(n_modos):
+        modo = st.text_area(f"Modo {i+1} (valores separados por comas)", 
+                          value=", ".join([f"{0.1*(j+1):.4f}" for j in range(n_pisos)]))
+        try:
+            modos[f"Modo{i+1}"] = np.array([float(x.strip()) for x in modo.split(',')])
+        except:
+            st.error("Formato incorrecto en los vectores modales")
 
-# Vectores modales predefinidos (podrían hacerse editables)
-X1 = np.array([0.03112, 0.05959, 0.08302, 0.09940, 0.10834])
-X2 = np.array([-0.08102, -0.10493, -0.05484, 0.03358, 0.10609])
-X3 = np.array([0.10415, 0.03021, -0.09525, -0.05769, 0.09176])
+# Parámetros fijos
+H = st.sidebar.number_input("Altura Total (m)", 3.0, 50.0, 10.0)
+Z = st.sidebar.number_input("Factor de Zona", 0.1, 1.0, 0.45)
+S = st.sidebar.number_input("Factor de Suelo", 0.5, 2.0, 1.0)
+TP = st.sidebar.number_input("Período TP (s)", 0.1, 1.0, 0.4)
+TL = st.sidebar.number_input("Período TL (s)", 1.0, 5.0, 2.5)
+U = st.sidebar.number_input("Factor de Uso", 0.5, 2.0, 1.0)
 
-# Procesamiento principal
-if st.button("🔄 Calcular y Graficar"):
-    with st.spinner("Realizando cálculos..."):
-        # Ejecutar cálculos
-        resultados = f.main_calculos(H, Z, S, TP, TL, U, CT, R0, m1, m5, X1, X2, X3)
-        
-        # Mostrar resultados
-        st.subheader("📈 Resultados Gráficos")
-        
-        # Gráficos en pestañas
-        tab1, tab2 = st.tabs(["Fuerzas y Cortantes", "Combinaciones de Cortantes"])
-        
-        with tab1:
-            fig1, fig2 = f.generar_graficos_principales(
-                resultados['F1'], 
-                resultados['V1']
+if st.button("🚀 Ejecutar Análisis"):
+    try:
+        with st.spinner("Realizando cálculo sísmico..."):
+            resultados = f.main_calculos(
+                n_pisos, H, Z, S, TP, TL, U, CT, R0, masas, modos, Ia, Ip
             )
-            st.pyplot(fig1)
-            st.pyplot(fig2)
-        
-        with tab2:
-            fig3 = f.generar_graficos_combinaciones(
-                resultados['Vsum_abs'],
-                resultados['Vrisc'],
-                resultados['Vrnc_h'],
-                resultados['Vreal']
+            
+            st.success("Análisis completado correctamente!")
+            
+            # Visualización de resultados
+            col1, col2 = st.columns(2)
+            with col1:
+                st.subheader("Fuerzas Sísmicas")
+                fig1 = f.generar_graficos_principales(resultados['F1'], resultados['V1'], n_pisos)
+                st.pyplot(fig1)
+                
+            with col2:
+                st.subheader("Comparación de Cortantes")
+                fig2 = f.generar_graficos_combinaciones(resultados, n_pisos)
+                st.pyplot(fig2)
+            
+            # Reporte Excel
+            excel_buffer = f.generar_reporte_excel(resultados['Vreal'], n_pisos)
+            st.download_button(
+                label="📥 Descargar Reporte Completo",
+                data=excel_buffer,
+                file_name="analisis_sismico.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
-            st.pyplot(fig3)
-        
-        # Reporte Excel
-        st.subheader("📊 Reporte de Resultados")
-        excel_buffer = f.generar_reporte_excel(resultados['Vreal'])
-        st.download_button(
-            label="📥 Descargar Reporte Excel",
-            data=excel_buffer,
-            file_name="Reporte_Sismico.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-        
-        # Mostrar valores numéricos
-        with st.expander("🔍 Ver valores numéricos"):
-            st.write("**Fuerzas Modales (F1):**", resultados['F1'])
-            st.write("**Cortante Base (V1):**", resultados['V1'])
-            st.write("**V_RISC:**", resultados['Vrisc'])
-            st.write("**V_Real:**", resultados['Vreal'])
+            
+    except Exception as e:
+        st.error(f"Error en el cálculo: {str(e)}")
